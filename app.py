@@ -59,6 +59,7 @@ def ejecutar_reglas_despacho(df):
     df_base = df.copy()
     if 'Llegada' not in df_base.columns: 
         df_base['Llegada'] = 0
+        
     reglas = {
         'FIFO': df_base.copy(),
         'LIFO': df_base.iloc[::-1].copy(),
@@ -68,20 +69,27 @@ def ejecutar_reglas_despacho(df):
         'MS': df_base.assign(Slack=df_base['Deadline'] - df_base['Proceso']).sort_values(by='Slack'),
         'CR': df_base.assign(CR=df_base['Deadline'] / np.where(df_base['Proceso']==0, 1e-5, df_base['Proceso'])).sort_values(by='CR')
     }
+    
     kpis, secuencias = {}, {}
+    n_trabajos = len(df_base)
+    
     for r, df_ord in reglas.items():
         df_sim = simular_secuencia(df_ord)
         secuencias[r] = df_sim
         mk = df_sim['Tiempo de Terminacion'].max() if not df_sim.empty else 0
         ct = df_sim['Tiempo de Terminacion'].sum()
+        cprom = ct / n_trabajos if n_trabajos > 0 else 0
+        
         kpis[r] = {
             'MAKESPAN': int(mk),
             'TMAX': int(df_sim['Tardanza'].max()),
+            'TTOTAL': int(df_sim['Tardanza'].sum()),
             'TT': int(df_sim['Trabajo Tardio'].sum()),
             'CT': int(ct),
-            'TTOTAL': int(df_sim['Tardanza'].sum()),
+            'C_PROM': round(cprom, 2),
             'WIP': round(ct / mk, 2) if mk > 0 else 0
         }
+        
     return pd.DataFrame(kpis), secuencias
 
 df_indicadores, tablas_secuencias = ejecutar_reglas_despacho(df_trabajos)
@@ -89,14 +97,13 @@ df_indicadores, tablas_secuencias = ejecutar_reglas_despacho(df_trabajos)
 # ---------------------------------------------------------
 # PANEL 2 Y PANEL 3 (DASHBOARD)
 # ---------------------------------------------------------
-col1, col2 = st.columns([1, 1.1])
+col1, col2 = st.columns([1, 1.2])
 
 with col1:
     st.header("PANEL 2 — Resumen y Recomendación")
     regla_recomendada = df_indicadores.T.sort_values(by=['TTOTAL', 'CT', 'TMAX']).index[0]
     st.success(f"🏆 **Regla Recomendada Automáticamente:** `{regla_recomendada}`")
     
-    # Asignación de la variable elegida
     regla_sel = st.selectbox("Seleccionar Regla para Inspeccionar:", list(df_indicadores.columns), index=0)
 
     k = df_indicadores[regla_sel]
@@ -112,22 +119,97 @@ with col1:
 
 with col2:
     st.header("PANEL 3 — Comparación")
-    tab_tabla, tab_radial = st.tabs(["📊 Tabla Comparativa", "🕸️ Gráfico Radial"])
+    tab_tabla, tab_radial = st.tabs(["📊 Tabla Comparativa", "🕸️ Gráfico Radial Interactivo"])
     
     with tab_tabla:
         st.dataframe(df_indicadores, use_container_width=True)
         
     with tab_radial:
-        df_norm = df_indicadores.astype(float).copy()
-        for idx in df_norm.index:
-            mn, mx = df_norm.loc[idx].min(), df_norm.loc[idx].max()
-            df_norm.loc[idx] = 100.0 if mx == mn else 100 * (1 - (df_norm.loc[idx] - mn) / (mx - mn + 1e-5))
+        # Definición explícita de los 7 ejes requeridos
+        ejes_config = [
+            ('MAKESPAN', 'Makespan'),
+            ('TMAX', 'Tmax'),
+            ('TTOTAL', 'Tardanza Total'),
+            ('TT', 'Trabajos tardíos'),
+            ('CT', 'Tiempo Total de Terminación'),
+            ('C_PROM', 'C promedio'),
+            ('WIP', 'WIP')
+        ]
         
+        # Mapeo y cálculo de Scores Normalizados (0 a 100)
+        df_scores = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
+        df_orig = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
+
+        for id_kpi, nombre_eje in ejes_config:
+            valores_orig = df_indicadores.loc[id_kpi].astype(float)
+            df_orig.loc[nombre_eje] = valores_orig
+            
+            val_min = valores_orig.min()
+            val_max = valores_orig.max()
+            
+            if val_max == val_min:
+                df_scores.loc[nombre_eje] = 100.0
+            else:
+                # Minimización: Score = 100 * (Max - Xi) / (Max - Min)
+                df_scores.loc[nombre_eje] = 100.0 * (val_max - valores_orig) / (val_max - val_min)
+
+        # Filtro multiselect para activar/desactivar reglas dinámicamente
+        reglas_seleccionadas = st.multiselect(
+            "Seleccionar Reglas para visualizar:",
+            options=list(df_indicadores.columns),
+            default=list(df_indicadores.columns)
+        )
+
+        categories = [e[1] for e in ejes_config]
+        categories_closed = categories + [categories[0]]
+
         fig_radar = go.Figure()
-        for r in set([regla_sel, regla_recomendada, 'FIFO', 'SPT']):
-            v = df_norm[r].tolist()
-            fig_radar.add_trace(go.Scatterpolar(r=v+[v[0]], theta=list(df_norm.index)+[df_norm.index[0]], name=r, fill='toself' if r==regla_sel else None))
-        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), height=350, showlegend=True)
+
+        for r in reglas_seleccionadas:
+            r_scores = df_scores[r].tolist()
+            r_scores_closed = r_scores + [r_scores[0]]
+            
+            r_orig = df_orig[r].tolist()
+            r_orig_closed = r_orig + [r_orig[0]]
+            
+            fig_radar.add_trace(go.Scatterpolar(
+                r=r_scores_closed,
+                theta=categories_closed,
+                name=r,
+                customdata=r_orig_closed,
+                fill='toself' if r == regla_sel else None,
+                opacity=0.8 if r == regla_sel else 0.4,
+                hovertemplate=(
+                    f"<b>Regla:</b> {r}<br>"
+                    "<b>Indicador:</b> %{theta}<br>"
+                    "<b>Valor Original:</b> %{customdata}<br>"
+                    "<b>Score Desempeño:</b> %{r:.1f} / 100<br>"
+                    "<extra></extra>"
+                )
+            ))
+
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100],
+                    showline=True,
+                    gridcolor='whitesmoke'
+                )
+            ),
+            height=460,
+            showlegend=True,
+            legend=dict(
+                title=dict(text="Reglas (Clic para aislar/ocultar):"),
+                orientation="h",
+                yanchor="bottom",
+                y=-0.3,
+                xanchor="center",
+                x=0.5
+            ),
+            margin=dict(l=40, r=40, t=20, b=80)
+        )
+        
         st.plotly_chart(fig_radar, use_container_width=True)
 
 st.markdown("---")
@@ -144,14 +226,14 @@ st.dataframe(
     hide_index=True
 )
 
-st.subheader(f"📅 Diagrama de Gantt ({regla_sel})")
+st.subheader(f"📅 Diagrama de Gantt Interactivo ({regla_sel})")
 df_gantt = tablas_secuencias[regla_sel].copy()
 
 fig_gantt = go.Figure()
 
 for _, row in df_gantt.iterrows():
     estado = "Tardío" if row["Tardanza"] > 0 else "A tiempo"
-    color = "#ef4444" if row["Tardanza"] > 0 else "#22c55e"  # Rojo si es tardío, verde si es a tiempo
+    color = "#ef4444" if row["Tardanza"] > 0 else "#22c55e"
     
     hovertxt = (
         f"<b>Trabajo:</b> {row['Trabajo']}<br>"
