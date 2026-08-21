@@ -209,26 +209,27 @@ with col_der:
     st.plotly_chart(fig_radar, use_container_width=True)
 
 # ---------------------------------------------------------
-# GRAFICA DE GANTT
+# GRAFICA DE GANTT (CORREGIDO)
 # ---------------------------------------------------------
 st.markdown("---")
 st.subheader(f"📅 Diagrama de Gantt — Regla {regla_seleccionada}")
 
 df_gantt = tablas_secuencias[regla_seleccionada].copy()
-df_gantt['Inicio_Str'] = df_gantt['Tiempo de Inicio']
 df_gantt['Duracion'] = df_gantt['Proceso']
 
-fig_gantt = px.timeline(
+# Uso de px.bar horizontal con base para indicar tiempo de inicio numérico
+fig_gantt = px.bar(
     df_gantt,
-    x_start="Tiempo de Inicio",
-    x_end="Tiempo de Terminacion",
+    x="Duracion",
     y="Trabajo",
+    base="Tiempo de Inicio",
+    orientation="h",
     color="Trabajo",
     text="Trabajo",
     title=f"Programación de Trabajos en Máquina ({regla_seleccionada})"
 )
 
-fig_gantt.update_yaxes(autorange="reversed")
+fig_gantt.update_yaxes(autorange="reversed") # Mantiene el orden A -> F de arriba a abajo
 fig_gantt.update_layout(
     xaxis_title="Tiempo (Unidades de tiempo)",
     yaxis_title="Trabajo",
