@@ -209,31 +209,53 @@ with col_der:
     st.plotly_chart(fig_radar, use_container_width=True)
 
 # ---------------------------------------------------------
-# GRAFICA DE GANTT (CORREGIDO)
+# PANEL 4: SECUENCIA Y DIAGRAMA DE GANTT INTERACTIVO
 # ---------------------------------------------------------
-st.markdown("---")
-st.subheader(f"📅 Diagrama de Gantt — Regla {regla_seleccionada}")
+st.header("PANEL 4 — Secuencia y Diagrama de Gantt")
 
-df_gantt = tablas_secuencias[regla_seleccionada].copy()
-df_gantt['Duracion'] = df_gantt['Proceso']
-
-# Uso de px.bar horizontal con base para indicar tiempo de inicio numérico
-fig_gantt = px.bar(
-    df_gantt,
-    x="Duracion",
-    y="Trabajo",
-    base="Tiempo de Inicio",
-    orientation="h",
-    color="Trabajo",
-    text="Trabajo",
-    title=f"Programación de Trabajos en Máquina ({regla_seleccionada})"
+st.subheader(f"📋 Secuencia Detallada ({regla_sel})")
+st.dataframe(
+    tablas_secuencias[regla_sel][['Trabajo', 'Tiempo de Inicio', 'Tiempo de Terminacion', 'Proceso', 'Tardanza', 'Trabajo Tardio']], 
+    use_container_width=True, 
+    hide_index=True
 )
 
-fig_gantt.update_yaxes(autorange="reversed") # Mantiene el orden A -> F de arriba a abajo
+st.subheader(f"📅 Diagrama de Gantt ({regla_sel})")
+df_gantt = tablas_secuencias[regla_sel].copy()
+
+fig_gantt = go.Figure()
+
+for _, row in df_gantt.iterrows():
+    estado = "Tardío" if row["Tardanza"] > 0 else "A tiempo"
+    color = "#ef4444" if row["Tardanza"] > 0 else "#22c55e"  # Rojo si es tardío, verde si es a tiempo
+    
+    hovertxt = (
+        f"<b>Trabajo:</b> {row['Trabajo']}<br>"
+        f"<b>Regla:</b> {regla_sel}<br>"
+        f"<b>Inicio:</b> {row['Tiempo de Inicio']}<br>"
+        f"<b>Fin:</b> {row['Tiempo de Terminacion']}<br>"
+        f"<b>Tiempo de proceso:</b> {row['Proceso']}<br>"
+        f"<b>Fecha de entrega:</b> {row['Deadline']}<br>"
+        f"<b>Tardanza:</b> {row['Tardanza']}<br>"
+        f"<b>Estado:</b> {estado}"
+    )
+    
+    fig_gantt.add_trace(go.Bar(
+        x=[row["Proceso"]],
+        y=[row["Trabajo"]],
+        base=[row["Tiempo de Inicio"]],
+        orientation='h',
+        marker_color=color,
+        name=str(row["Trabajo"]),
+        hovertemplate=hovertxt + "<extra></extra>"
+    ))
+
+fig_gantt.update_yaxes(autorange="reversed")
 fig_gantt.update_layout(
-    xaxis_title="Tiempo (Unidades de tiempo)",
+    title=f"Programación de Trabajos ({regla_sel}) — Verde: A tiempo | Rojo: Tardío",
+    xaxis_title="Tiempo (Unidades)",
     yaxis_title="Trabajo",
-    height=350,
+    height=380,
     showlegend=False
 )
 
