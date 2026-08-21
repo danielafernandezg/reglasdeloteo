@@ -36,13 +36,11 @@ else:
 
 df_trabajos = st.sidebar.data_editor(df_input, num_rows="dynamic", use_container_width=True)
 
-# Trabajos activos
 lista_trabajos = df_trabajos['Trabajo'].astype(str).tolist()
 
 st.sidebar.subheader("1.2 Matriz de Alistamiento ($S_{ij}$)")
-st.sidebar.caption("Filas: Trabajo Saliente ($i$) | Columnas: Trabajo Entrante ($j$)")
+st.sidebar.caption("Filas: Saliente ($i$) | Columnas: Entrante ($j$)")
 
-# Matriz con los valores exactos de tu imagen
 matriz_imagen = pd.DataFrame(
     data=[
         [0, 2, 3, 1, 4, 2],
@@ -56,7 +54,6 @@ matriz_imagen = pd.DataFrame(
     columns=['A', 'B', 'C', 'D', 'E', 'F']
 )
 
-# Reindexado según los trabajos configurados
 df_alistamiento = matriz_imagen.reindex(index=lista_trabajos, columns=lista_trabajos, fill_value=0)
 df_alistamiento = st.sidebar.data_editor(df_alistamiento, use_container_width=True)
 
@@ -260,14 +257,12 @@ st.plotly_chart(fig_radar, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------------
-# PANEL 4: SECUENCIA, ALISTAMIENTOS Y GANTT INTERACTIVO
+# PANEL 4: SECUENCIA Y GANTT INTERACTIVO
 # ---------------------------------------------------------
 st.header("PANEL 4 — Secuencia y Diagrama de Gantt")
 
-# 1. Visualización de la Matriz General con Estilo de Imagen
 st.subheader("🛠️ Matriz de Alistamiento General ($S_{ij}$)")
 
-# Función de estilizado para colorear la diagonal de azul igual que la imagen
 def estilizar_matriz(df):
     def highlight_diag(data):
         attr = 'background-color: #38bdf8; color: transparent;'
@@ -279,15 +274,13 @@ def estilizar_matriz(df):
 
 st.dataframe(estilizar_matriz(df_alistamiento), use_container_width=True)
 
-# 2. Secuencia Detallada con Tiempos de Alistamiento
-st.subheader(f"📋 Secuencia Detallada y Cambios de Preparación ({regla_sel})")
+st.subheader(f"📋 Secuencia Detallada ({regla_sel})")
 st.dataframe(
     tablas_secuencias[regla_sel][['Trabajo', 'Transicion', 'Alistamiento', 'Tiempo de Inicio', 'Tiempo de Terminacion', 'Proceso', 'Tardanza', 'Trabajo Tardio']], 
     use_container_width=True, 
     hide_index=True
 )
 
-# 3. Diagrama de Gantt Interactivo
 st.subheader(f"📅 Diagrama de Gantt Interactivo ({regla_sel})")
 df_gantt = tablas_secuencias[regla_sel].copy()
 
@@ -295,38 +288,15 @@ fig_gantt = go.Figure()
 
 for _, row in df_gantt.iterrows():
     estado = "Tardío" if row["Tardanza"] > 0 else "A tiempo"
-    color_proceso = "#ef4444" if row["Tardanza"] > 0 else "#22c55e"
+    color = "#ef4444" if row["Tardanza"] > 0 else "#22c55e"
     
-    # Bloque Gris de Alistamiento
-    if row['Alistamiento'] > 0:
-        inicio_alist = row['Tiempo de Inicio'] - row['Alistamiento']
-        hover_alist = (
-            f"<b>Trabajo:</b> {row['Trabajo']} (Alistamiento)<br>"
-            f"<b>Transición:</b> {row['Transicion']}<br>"
-            f"<b>Inicio Alistamiento:</b> {inicio_alist}<br>"
-            f"<b>Fin Alistamiento:</b> {row['Tiempo de Inicio']}<br>"
-            f"<b>Tiempo Alistamiento:</b> {row['Alistamiento']}"
-        )
-        fig_gantt.add_trace(go.Bar(
-            x=[row["Alistamiento"]],
-            y=[row["Trabajo"]],
-            base=[inicio_alist],
-            orientation='h',
-            marker_color='#9ca3af',
-            name=f"Alistamiento {row['Trabajo']}",
-            hovertemplate=hover_alist + "<extra></extra>"
-        ))
-
-    # Bloque Color (Verde/Rojo) de Proceso
     hovertxt = (
         f"<b>Trabajo:</b> {row['Trabajo']}<br>"
         f"<b>Regla:</b> {regla_sel}<br>"
-        f"<b>Transición:</b> {row['Transicion']}<br>"
-        f"<b>Tiempo Alistamiento:</b> {row['Alistamiento']}<br>"
-        f"<b>Inicio Proceso:</b> {row['Tiempo de Inicio']}<br>"
-        f"<b>Fin Proceso:</b> {row['Tiempo de Terminacion']}<br>"
-        f"<b>Tiempo Proceso:</b> {row['Proceso']}<br>"
-        f"<b>Fecha Entrega:</b> {row['Deadline']}<br>"
+        f"<b>Inicio:</b> {row['Tiempo de Inicio']}<br>"
+        f"<b>Fin:</b> {row['Tiempo de Terminacion']}<br>"
+        f"<b>Tiempo de proceso:</b> {row['Proceso']}<br>"
+        f"<b>Fecha de entrega:</b> {row['Deadline']}<br>"
         f"<b>Tardanza:</b> {row['Tardanza']}<br>"
         f"<b>Estado:</b> {estado}"
     )
@@ -336,17 +306,17 @@ for _, row in df_gantt.iterrows():
         y=[row["Trabajo"]],
         base=[row["Tiempo de Inicio"]],
         orientation='h',
-        marker_color=color_proceso,
+        marker_color=color,
         name=str(row["Trabajo"]),
         hovertemplate=hovertxt + "<extra></extra>"
     ))
 
 fig_gantt.update_yaxes(autorange="reversed")
 fig_gantt.update_layout(
-    title=f"Programación de Trabajos ({regla_sel}) — Gris: Alistamiento | Verde: A tiempo | Rojo: Tardío",
+    title=f"Programación de Trabajos ({regla_sel}) — Verde: A tiempo | Rojo: Tardío",
     xaxis_title="Tiempo (Unidades)",
     yaxis_title="Trabajo",
-    height=420,
+    height=380,
     showlegend=False
 )
 
