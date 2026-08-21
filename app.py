@@ -95,122 +95,124 @@ def ejecutar_reglas_despacho(df):
 df_indicadores, tablas_secuencias = ejecutar_reglas_despacho(df_trabajos)
 
 # ---------------------------------------------------------
-# PANEL 2 Y PANEL 3 (DASHBOARD)
+# PANEL 2: RESUMEN Y RECOMENDACIÓN
 # ---------------------------------------------------------
-col1, col2 = st.columns([1, 1.2])
+st.header("PANEL 2 — Resumen y Recomendación")
+regla_recomendada = df_indicadores.T.sort_values(by=['TTOTAL', 'CT', 'TMAX']).index[0]
+st.success(f"🏆 **Regla Recomendada Automáticamente:** `{regla_recomendada}`")
 
-with col1:
-    st.header("PANEL 2 — Resumen y Recomendación")
-    regla_recomendada = df_indicadores.T.sort_values(by=['TTOTAL', 'CT', 'TMAX']).index[0]
-    st.success(f"🏆 **Regla Recomendada Automáticamente:** `{regla_recomendada}`")
+regla_sel = st.selectbox("Seleccionar Regla para Inspeccionar en Tarjetas y Gantt:", list(df_indicadores.columns), index=0)
+
+k = df_indicadores[regla_sel]
+m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+m1.metric("MAKESPAN", k['MAKESPAN'])
+m2.metric("TMAX", k['TMAX'])
+m3.metric("TTOTAL", k['TTOTAL'])
+m4.metric("TT", k['TT'])
+m5.metric("CT", k['CT'])
+m6.metric("C PROM", k['C_PROM'])
+m7.metric("WIP", f"{k['WIP']:.2f}")
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# PANEL 3: COMPARACIÓN Y GRÁFICO RADIAL INTERACTIVO
+# ---------------------------------------------------------
+st.header("PANEL 3 — Comparación")
+
+# 1. Tabla de Indicadores
+st.subheader("📊 Tabla Comparativa de Indicadores")
+st.dataframe(df_indicadores, use_container_width=True)
+
+# 2. Gráfico Radial Normalizado
+st.subheader("🕸️ Gráfico Radial / Polar de Desempeño Interactivo")
+
+# Configuración explícita de los 7 ejes requeridos
+ejes_config = [
+    ('MAKESPAN', 'Makespan'),
+    ('TMAX', 'Tmax'),
+    ('TTOTAL', 'Tardanza Total'),
+    ('TT', 'Trabajos tardíos'),
+    ('CT', 'Tiempo Total de Terminación'),
+    ('C_PROM', 'C promedio'),
+    ('WIP', 'WIP')
+]
+
+# Construcción de matrices de datos
+df_scores = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
+df_orig = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
+
+for id_kpi, nombre_eje in ejes_config:
+    valores_orig = df_indicadores.loc[id_kpi].astype(float)
+    df_orig.loc[nombre_eje] = valores_orig
+    val_min = valores_orig.min()
+    val_max = valores_orig.max()
     
-    regla_sel = st.selectbox("Seleccionar Regla para Inspeccionar:", list(df_indicadores.columns), index=0)
+    # Aplicar fórmula de minimización: Score = 100 * (Max - Xi) / (Max - Min)
+    if val_max == val_min:
+        df_scores.loc[nombre_eje] = 100.0
+    else:
+        df_scores.loc[nombre_eje] = 100.0 * (val_max - valores_orig) / (val_max - val_min)
 
-    k = df_indicadores[regla_sel]
-    m1, m2, m3 = st.columns(3)
-    m1.metric("MAKESPAN", k['MAKESPAN'])
-    m2.metric("TMAX", k['TMAX'])
-    m3.metric("TT", k['TT'])
+reglas_seleccionadas = st.multiselect(
+    "Seleccionar reglas para comparar visualmente (Activar/Desactivar):",
+    options=list(df_indicadores.columns),
+    default=list(df_indicadores.columns)
+)
 
-    m4, m5, m6 = st.columns(3)
-    m4.metric("CT (Suma Ci)", k['CT'])
-    m5.metric("TTOTAL", k['TTOTAL'])
-    m6.metric("WIP", f"{k['WIP']:.2f}")
+categories = [e[1] for e in ejes_config]
+categories_closed = categories + [categories[0]]
 
-with col2:
-    st.header("PANEL 3 — Comparación")
-    tab_tabla, tab_radial = st.tabs(["📊 Tabla Comparativa", "🕸️ Gráfico Radial Interactivo"])
+fig_radar = go.Figure()
+
+for r in reglas_seleccionadas:
+    r_scores = df_scores[r].tolist()
+    r_scores_closed = r_scores + [r_scores[0]]
     
-    with tab_tabla:
-        st.dataframe(df_indicadores, use_container_width=True)
-        
-    with tab_radial:
-        # Definición explícita de los 7 ejes requeridos
-        ejes_config = [
-            ('MAKESPAN', 'Makespan'),
-            ('TMAX', 'Tmax'),
-            ('TTOTAL', 'Tardanza Total'),
-            ('TT', 'Trabajos tardíos'),
-            ('CT', 'Tiempo Total de Terminación'),
-            ('C_PROM', 'C promedio'),
-            ('WIP', 'WIP')
-        ]
-        
-        # Mapeo y cálculo de Scores Normalizados (0 a 100)
-        df_scores = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
-        df_orig = pd.DataFrame(index=[e[1] for e in ejes_config], columns=df_indicadores.columns)
-
-        for id_kpi, nombre_eje in ejes_config:
-            valores_orig = df_indicadores.loc[id_kpi].astype(float)
-            df_orig.loc[nombre_eje] = valores_orig
-            
-            val_min = valores_orig.min()
-            val_max = valores_orig.max()
-            
-            if val_max == val_min:
-                df_scores.loc[nombre_eje] = 100.0
-            else:
-                # Minimización: Score = 100 * (Max - Xi) / (Max - Min)
-                df_scores.loc[nombre_eje] = 100.0 * (val_max - valores_orig) / (val_max - val_min)
-
-        # Filtro multiselect para activar/desactivar reglas dinámicamente
-        reglas_seleccionadas = st.multiselect(
-            "Seleccionar Reglas para visualizar:",
-            options=list(df_indicadores.columns),
-            default=list(df_indicadores.columns)
+    r_orig = df_orig[r].tolist()
+    r_orig_closed = r_orig + [r_orig[0]]
+    
+    custom_data = np.stack((r_orig_closed, r_scores_closed), axis=-1)
+    
+    fig_radar.add_trace(go.Scatterpolar(
+        r=r_scores_closed,
+        theta=categories_closed,
+        name=r,
+        customdata=custom_data,
+        fill='toself' if r == regla_sel else None,
+        opacity=0.8 if r == regla_sel else 0.4,
+        hovertemplate=(
+            f"<b>Regla:</b> {r}<br>"
+            "<b>Indicador:</b> %{theta}<br>"
+            "<b>Valor Original:</b> %{customdata[0]}<br>"
+            "<b>Score Desempeño:</b> %{customdata[1]:.1f} / 100"
+            "<extra></extra>"
         )
+    ))
 
-        categories = [e[1] for e in ejes_config]
-        categories_closed = categories + [categories[0]]
-
-        fig_radar = go.Figure()
-
-        for r in reglas_seleccionadas:
-            r_scores = df_scores[r].tolist()
-            r_scores_closed = r_scores + [r_scores[0]]
-            
-            r_orig = df_orig[r].tolist()
-            r_orig_closed = r_orig + [r_orig[0]]
-            
-            fig_radar.add_trace(go.Scatterpolar(
-                r=r_scores_closed,
-                theta=categories_closed,
-                name=r,
-                customdata=r_orig_closed,
-                fill='toself' if r == regla_sel else None,
-                opacity=0.8 if r == regla_sel else 0.4,
-                hovertemplate=(
-                    f"<b>Regla:</b> {r}<br>"
-                    "<b>Indicador:</b> %{theta}<br>"
-                    "<b>Valor Original:</b> %{customdata}<br>"
-                    "<b>Score Desempeño:</b> %{r:.1f} / 100<br>"
-                    "<extra></extra>"
-                )
-            ))
-
-        fig_radar.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100],
-                    showline=True,
-                    gridcolor='whitesmoke'
-                )
-            ),
-            height=460,
-            showlegend=True,
-            legend=dict(
-                title=dict(text="Reglas (Clic para aislar/ocultar):"),
-                orientation="h",
-                yanchor="bottom",
-                y=-0.3,
-                xanchor="center",
-                x=0.5
-            ),
-            margin=dict(l=40, r=40, t=20, b=80)
+fig_radar.update_layout(
+    polar=dict(
+        radialaxis=dict(
+            visible=True,
+            range=[0, 100],
+            showline=True,
+            gridcolor='lightgray'
         )
-        
-        st.plotly_chart(fig_radar, use_container_width=True)
+    ),
+    height=520,
+    showlegend=True,
+    legend=dict(
+        title=dict(text="Leyenda de Reglas (Clic para ocultar/aislar):"),
+        orientation="h",
+        yanchor="bottom",
+        y=-0.25,
+        xanchor="center",
+        x=0.5
+    ),
+    margin=dict(l=60, r=60, t=30, b=100)
+)
+
+st.plotly_chart(fig_radar, use_container_width=True)
 
 st.markdown("---")
 
